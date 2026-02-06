@@ -1,0 +1,44 @@
+{
+  "name": "@monorepo/root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w backend && npm run build -w work",
+    "start": "npm run start:prod -w backend",
+    "start:dev": "npm run start:dev -w backend",
+    "start:worker": "npm run start:dev -w work",
+    "lint": "echo \"no linter configured\"",
+    "test": "echo \"no tests configured\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "NestJS monorepo with backend API and worker using BullMQ",
+  "devDependencies": {
+    "@types/node": "^25.2.0",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.12",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.12",
+    "@nestjs/platform-express": "^11.1.12",
+    "bcryptjs": "^3.0.3",
+    "bullmq": "^5.67.2",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.3",
+    "mysql2": "^3.16.2",
+    "redis": "^5.10.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "svg-captcha": "^1.4.0",
+    "typeorm": "^0.3.28"
+  }
+}
