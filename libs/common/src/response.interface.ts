@@ -1,14 +1,14 @@
 /**
- * 统一响应接口
+ * 统一响应结构（与 backend TransformInterceptor 一致）
  */
-export interface IResponse<T = any> {
+export interface IResponseShape<T = unknown> {
   errCode: number;
   errMsg: string;
   data?: T;
 }
 
 /**
- * 错误码枚举
+ * 常用错误码
  */
 export enum ErrorCode {
   SUCCESS = 0,

@@ -1,18 +1,36 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
-import { AppService } from './app.service';
+import { Controller, Get, Post, Body, Inject, Optional } from "@nestjs/common";
+import { REQUEST } from "@nestjs/core";
+import { Request } from "express";
+import {
+  BaseController,
+  CurrentUserInfo,
+  OPERATION_LOGGER,
+  IOperationLogger,
+} from "@common/index";
+import { AppService } from "./app.service";
 
 @Controller()
-export class AppController {
-  constructor(private readonly appService: AppService) {}
+export class AppController extends BaseController {
+  constructor(
+    @Optional()
+    @Inject(REQUEST)
+    request: (Request & { adminUser?: CurrentUserInfo }) | undefined,
+    @Optional()
+    @Inject(OPERATION_LOGGER)
+    operationLogger: IOperationLogger | undefined,
+    private readonly appService: AppService
+  ) {
+    super(request, operationLogger);
+  }
 
   @Get()
   getHello() {
-    return this.appService.getHello();
+    return this.success(this.appService.getHello());
   }
 
-  @Post('enqueue')
-  enqueue(@Body() body: Record<string, unknown>) {
-    return this.appService.enqueueExampleJob(body ?? {});
+  @Post("enqueue")
+  async enqueue(@Body() body: Record<string, unknown>) {
+    await this.appService.enqueueExampleJob(body ?? {});
+    return this.success({ ok: true });
   }
 }
-

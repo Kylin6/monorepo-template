@@ -11,19 +11,28 @@ import { DatabaseInitService } from "./database-init.service";
 import { UsersModule } from "./users/users.module";
 import { AuthModule } from "./auth/auth.module";
 import { AccessTokenMiddleware } from "./auth/access-token.middleware";
+import { OperationLogModule } from "./common/operation-log.module";
+import { ErrorLoggerService } from "./common/error-logger.service";
+import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      // 优先加载当前目录下 .env，其次加载 monorepo 根目录的 .env
       envFilePath: [".env", "../../.env"],
     }),
+    OperationLogModule,
     UsersModule,
     AuthModule,
   ],
   controllers: [AppController],
-  providers: [AppService, DatabaseInitService, AccessTokenMiddleware],
+  providers: [
+    AppService,
+    DatabaseInitService,
+    AccessTokenMiddleware,
+    ErrorLoggerService,
+    HttpExceptionFilter,
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

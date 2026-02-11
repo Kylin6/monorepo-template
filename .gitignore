@@ -1,6 +1,7 @@
 ### Node / Nest / TypeScript
 node_modules/
 dist/
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*

@@ -1,8 +1,7 @@
-import { Module } from '@nestjs/common';
+import { Module } from "@nestjs/common";
 
 /**
- * 通用模块
- * 包含统一响应格式的示例控制器（仅开发环境使用）
+ * 通用模块（可选导入，当前主要使用 OperationLogModule）
  */
 @Module({
   controllers: [],

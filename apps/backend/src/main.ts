@@ -1,9 +1,8 @@
-import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
+import "reflect-metadata";
+import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
-import { ConfigService } from '@nestjs/config';
-import { AppModule } from './app.module';
-import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
+import { ConfigService } from "@nestjs/config";
+import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 
 async function bootstrap() {
@@ -19,9 +18,8 @@ async function bootstrap() {
     exposedHeaders: ["X-Access-Token"],
   });
   // 启用全局异常过滤器（统一错误响应格式）
-  app.useGlobalFilters(new HttpExceptionFilter());
-  // 启用全局响应拦截器（统一成功响应格式）
-  app.useGlobalInterceptors(new TransformInterceptor());
+  app.useGlobalFilters(app.get(HttpExceptionFilter));
+  // 成功响应格式由各控制器基类 BaseController.success() / error() 等统一返回，不再使用全局 TransformInterceptor
 
   // 启用全局验证管道
   app.useGlobalPipes(
@@ -37,6 +35,5 @@ async function bootstrap() {
 
 bootstrap().catch((err) => {
   // eslint-disable-next-line no-console
-  console.error('Backend bootstrap error', err);
+  console.error("Backend bootstrap error", err);
 });
-

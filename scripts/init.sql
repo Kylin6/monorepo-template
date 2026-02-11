@@ -59,48 +59,6 @@ VALUES
 UNLOCK TABLES;
 
 
-# 转储表 articles
-# ------------------------------------------------------------
-
-DROP TABLE IF EXISTS `articles`;
-
-CREATE TABLE `articles` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `title` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
-  `content` text COLLATE utf8mb4_general_ci,
-  `createdAt` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updatedAt` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  `author` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `published` tinyint NOT NULL DEFAULT '1',
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-
-
-# 转储表 orders
-# ------------------------------------------------------------
-
-DROP TABLE IF EXISTS `orders`;
-
-CREATE TABLE `orders` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `orderNumber` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
-  `userId` int NOT NULL,
-  `amount` decimal(10,2) NOT NULL,
-  `currency` varchar(255) COLLATE utf8mb4_general_ci NOT NULL,
-  `status` varchar(255) COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'pending',
-  `description` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `paymentMethod` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `transactionId` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL,
-  `createdAt` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updatedAt` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (`id`),
-  KEY `FK_151b79a83ba240b0cb31b2302d1` (`userId`),
-  CONSTRAINT `FK_151b79a83ba240b0cb31b2302d1` FOREIGN KEY (`userId`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
-
-
 # 转储表 users
 # ------------------------------------------------------------
 
