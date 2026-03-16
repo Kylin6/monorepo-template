@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 
@@ -29,8 +30,34 @@ async function bootstrap() {
       transform: true, // 自动转换类型
     })
   );
+
+  // Swagger 文档
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle("Trxen Backend API")
+    .setDescription(
+      "Trxen 后端接口文档，大部分接口需在 Header 中携带 X-Access-Token 或 Authorization: Bearer &lt;token&gt;"
+    )
+    .setVersion("1.0")
+    .addBearerAuth(
+      {
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT",
+        description: "登录后获得的 access token",
+      },
+      "Bearer"
+    )
+    .addApiKey(
+      { type: "apiKey", name: "X-Access-Token", in: "header" },
+      "X-Access-Token"
+    )
+    .build();
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup("api-docs", app, document);
+
   await app.listen(3000);
   console.log("Backend HTTP server started on http://localhost:3000");
+  console.log("Swagger docs: http://localhost:3000/api-docs");
 }
 
 bootstrap().catch((err) => {

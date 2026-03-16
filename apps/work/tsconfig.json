@@ -1,7 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "../../dist/apps/work"
+    "outDir": "../../dist/apps/work",
+    "skipLibCheck": true
   },
   "include": ["src/**/*"]
 }

@@ -4,16 +4,46 @@ import {
   NestModule,
   RequestMethod,
 } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { TypeOrmModule } from "@nestjs/typeorm";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
-import { DatabaseInitService } from "./database-init.service";
+import {
+  User,
+  AdminUser,
+  AuthorizedWallet,
+  TransactionRecords,
+  EnergyRecords,
+  SysCfg,
+  UniqueId,
+  LeaseRecords,
+  Funds,
+  AddrDesc,
+  ResourcePrice,
+  RechargeRecords,
+  LeasePlan,
+  Exchange,
+  PlanLog,
+} from "@database/index";
 import { UsersModule } from "./users/users.module";
 import { AuthModule } from "./auth/auth.module";
+import { CodeTextModule } from "./codeText/codeText.module";
+import { SysCfgModule } from "./sysCfg/sysCfg.module";
+import { EnergyRecordsModule } from "./energyRecords/energyRecords.module";
+import { FundsModule } from "./funds/fund.module";
 import { AccessTokenMiddleware } from "./auth/access-token.middleware";
 import { OperationLogModule } from "./common/operation-log.module";
 import { ErrorLoggerService } from "./common/error-logger.service";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
+import { QueueModule } from "./queue/queue.module";
+import { AddrDescModule } from "./addrDesc/addrDesc.module";
+import { RechargeRecordsModule } from "./rechargeRecords/rechargeRecords.module";
+import { AuthorizedWalletModule } from "./AuthorizedWallet/authorizedWallet.module";
+import { TransactionRecordsModule } from "./transactionRecords/transactionRecords.module";
+import { LeasePlanModule } from "./leasePlans/leasePlan.module";
+import { LeaseRecordModule } from "./leaseRecords/leaseRecord.module";
+import { ExchangeModule } from "./exchage/exchage.module";
+import { ResourcePriceModule } from "./resourcePrice/resourcePrice.module";
 
 @Module({
   imports: [
@@ -21,14 +51,58 @@ import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
       isGlobal: true,
       envFilePath: [".env", "../../.env"],
     }),
+    TypeOrmModule.forRootAsync({
+      useFactory: (config: ConfigService) => ({
+        type: "mysql",
+        host: config.get<string>("MYSQL_HOST", "localhost"),
+        port: Number(config.get<string>("MYSQL_PORT") ?? 3306),
+        username: config.get<string>("MYSQL_USER", "root"),
+        password: config.get<string>("MYSQL_PASSWORD", "password"),
+        database: config.get<string>("MYSQL_DB", "app"),
+        entities: [
+          User,
+          AdminUser,
+          AuthorizedWallet,
+          TransactionRecords,
+          EnergyRecords,
+          SysCfg,
+          UniqueId,
+          LeaseRecords,
+          Funds,
+          AddrDesc,
+          ResourcePrice,
+          RechargeRecords,
+          LeasePlan,
+          Exchange,
+          PlanLog,
+        ],
+        synchronize:
+          process.env.TYPEORM_SYNCHRONIZE === "1" ||
+          process.env.TYPEORM_SYNCHRONIZE === "true",
+        logging: false,
+      }),
+      inject: [ConfigService],
+    }),
     OperationLogModule,
+    QueueModule,
     UsersModule,
     AuthModule,
+    CodeTextModule,
+    SysCfgModule,
+    EnergyRecordsModule,
+    FundsModule,
+    AddrDescModule,
+    RechargeRecordsModule,
+    AuthorizedWalletModule,
+    TransactionRecordsModule,
+    LeasePlanModule,
+    LeaseRecordModule,
+    ExchangeModule,
+    ResourcePriceModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    DatabaseInitService,
     AccessTokenMiddleware,
     ErrorLoggerService,
     HttpExceptionFilter,

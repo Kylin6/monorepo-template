@@ -7,6 +7,8 @@ import {
   Inject,
   Optional,
   Query,
+  Post,
+  Body,
 } from "@nestjs/common";
 import { REQUEST } from "@nestjs/core";
 import { Request } from "express";
@@ -15,6 +17,7 @@ import {
   ApiOperation,
   ApiSecurity,
   ApiBearerAuth,
+  ApiBody,
 } from "@nestjs/swagger";
 import {
   BaseController,
@@ -22,8 +25,11 @@ import {
   OPERATION_LOGGER,
   IOperationLogger,
 } from "@common/index";
+import { User } from "@database/index";
 import { UsersService } from "./users.service";
 import { UserSearchDto } from "./dto/user-search.dto";
+import { UpdateBalanceDto } from "./dto/update-balance.dto";
+import { EditUserDto } from "./dto/edit-user.dto";
 
 @ApiTags("用户")
 @ApiSecurity("X-Access-Token")
@@ -42,7 +48,7 @@ export class UsersController extends BaseController {
     super(request, operationLogger);
   }
 
-  @Get()
+  @Get("records")
   @ApiOperation({ summary: "用户列表（分页 + 搜索）" })
   async list(@Query() query: UserSearchDto) {
     const page = query.page ?? 1;
@@ -80,5 +86,30 @@ export class UsersController extends BaseController {
     }
     this.logOperation("GET_USER", { id });
     return this.success(user);
+  }
+
+  @Post("update-balance")
+  @ApiOperation({ summary: "调整用户余额" })
+  @ApiBody({ type: UpdateBalanceDto })
+  async updateBalance(
+    @Query("id", ParseIntPipe) id: number,
+    @Body() dto: UpdateBalanceDto
+  ) {
+    const { message } = await this.usersService.updateBalance(
+      id,
+      dto.change,
+      dto.remark ?? ""
+    );
+    this.logOperation("UPDATE_USER_BALANCE", { id, change: dto.change });
+    return this.success({ message });
+  }
+
+  @Post("edit")
+  @ApiOperation({ summary: "编辑用户信息" })
+  @ApiBody({ type: EditUserDto })
+  async edit(@Query("id", ParseIntPipe) id: number, @Body() dto: EditUserDto) {
+    const { message } = await this.usersService.editUser(id, dto);
+    this.logOperation("EDIT_USER", { id, ...dto });
+    return this.success({ message });
   }
 }

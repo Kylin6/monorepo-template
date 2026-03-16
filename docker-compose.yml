@@ -1,37 +1,58 @@
-version: "3.9"
 name: monorepo
 services:
   mysql:
-    image: mysql:8.4
+    image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: test_api
-      MYSQL_USER: app
-      MYSQL_PASSWORD: app_password
+      MYSQL_DATABASE: trxen
+      MYSQL_ROOT_PASSWORD: trxen0pspdkba
+      MYSQL_USER: trxen-monorepo
+      MYSQL_PASSWORD: trxen0pspdkba
     ports:
-      - "3306:3306"
+      - "33065:3306"
     volumes:
       - ./data/mysql:/var/lib/mysql
-    command: --default-authentication-plugin=mysql_native_password
+      # 使用 ./data/mysql 时需配合 lower_case_table_names=1，以兼容 macOS 不区分大小写的文件系统
+      # 若需初始化脚本，可取消下行注释（注意 scripts 内 SQL 的表名需与 TypeORM 实体一致）
+      - ./scripts:/docker-entrypoint-initdb.d:ro
+    command: --default-authentication-plugin=mysql_native_password --lower_case_table_names=1
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptrxen0pspdkba"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes
+    environment:
+      - REDIS_PASSWORD=
     ports:
       - "6379:6379"
+
+  nats:
+    image: nats:latest
+    command: ["-c", "/etc/nats/nats-server.conf"]
+    volumes:
+      - ./nats-server.conf:/etc/nats/nats-server.conf:ro
+    ports:
+      - "4222:4222"
+      - "8222:8222"
 
   backend:
     image: node:20-alpine
     working_dir: /app
     depends_on:
-      - mysql
-      - redis
+      mysql: { condition: service_healthy }
+      redis: { condition: service_started }
     env_file:
       - .env
     environment:
+      TYPEORM_SYNCHRONIZE: "1"
       MYSQL_HOST: mysql
-      MYSQL_USER: app
-      MYSQL_PASSWORD: app_password
-      MYSQL_DB: test_api
+      MYSQL_USER: trxen-monorepo
+      MYSQL_PASSWORD: trxen0pspdkba
+      MYSQL_DB: trxen
       REDIS_HOST: redis
     volumes:
       - .:/app
@@ -44,20 +65,62 @@ services:
     image: node:20-alpine
     working_dir: /app
     depends_on:
-      - mysql
-      - redis
+      mysql: { condition: service_healthy }
+      redis: { condition: service_started }
+      nats: { condition: service_started }
     env_file:
       - .env
     environment:
       MYSQL_HOST: mysql
-      MYSQL_USER: app
-      MYSQL_PASSWORD: app_password
-      MYSQL_DB: test_api
+      MYSQL_USER: trxen-monorepo
+      MYSQL_PASSWORD: trxen0pspdkba
+      MYSQL_DB: trxen
       REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+      MYSQL_WAIT_TABLES: users,funds,lease_records,authorized_wallet,resource_price,sys_cfg
     volumes:
       - .:/app
       - monorepo_node_modules:/app/node_modules
-    command: sh -c "npm install && npm run start:worker"
+    command: sh -c "npm install && node tools/wait-for-mysql-tables.js && npm run start:worker"
+
+  telegram-bot:
+    image: node:20-alpine
+    working_dir: /app
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_started }
+      nats: { condition: service_started }
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: trxen-monorepo
+      MYSQL_PASSWORD: trxen0pspdkba
+      MYSQL_DB: trxen
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+      MYSQL_WAIT_TABLES: users,funds,lease_records,authorized_wallet,resource_price,sys_cfg
+    volumes:
+      - .:/app
+      - monorepo_node_modules:/app/node_modules
+    command: sh -c "npm install && node tools/wait-for-mysql-tables.js && npm run start:telegram-bot"
+
+  scan-tron:
+    image: node:20-alpine
+    working_dir: /app
+    depends_on:
+      redis: { condition: service_started }
+      nats: { condition: service_started }
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+    volumes:
+      - .:/app
+      - monorepo_node_modules:/app/node_modules
+    command: sh -c "npm install && npm run start:scan-tron"
+
 
 volumes:
   mysql_data:

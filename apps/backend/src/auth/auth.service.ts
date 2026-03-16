@@ -3,9 +3,11 @@ import {
   UnauthorizedException,
   BadRequestException,
 } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
 import { randomBytes, createHmac } from "crypto";
 import * as bcrypt from "bcryptjs";
-import { AdminUser, getAdminUserRepository } from "@database/index";
+import { AdminUser } from "@database/index";
 import { LoginDto } from "./dto/login.dto";
 import { AuthResponseDto } from "./dto/auth-response.dto";
 import { CaptchaService } from "./captcha.service";
@@ -22,6 +24,12 @@ export class AuthService {
     { userId: number; expiresAt: number }
   >();
 
+  constructor(
+    private captchaService: CaptchaService,
+    @InjectRepository(AdminUser)
+    private readonly adminUserRepository: Repository<AdminUser>
+  ) {}
+
   private omitAdminUserSensitive(adminUser: AdminUser): {
     uid: number;
     twoStepValidate: number | null;
@@ -32,21 +40,13 @@ export class AuthService {
     };
   }
 
-  constructor(private captchaService: CaptchaService) {}
-
-  private async adminUserRepository() {
-    return getAdminUserRepository();
-  }
-
   async findAdminUserByAccessToken(token: string): Promise<AdminUser | null> {
     if (!token) return null;
-    const repo = await this.adminUserRepository();
-    return repo.findOne({ where: { accessToken: token } });
+    return this.adminUserRepository.findOne({ where: { accessToken: token } });
   }
 
   async findAdminUserById(id: number): Promise<AdminUser | null> {
-    const repo = await this.adminUserRepository();
-    return repo.findOne({ where: { id } });
+    return this.adminUserRepository.findOne({ where: { id } });
   }
 
   private async issueAccessToken(adminUser: AdminUser): Promise<string> {
@@ -59,10 +59,8 @@ export class AuthService {
       (adminUser.accessTokenExpired === 0 ||
         currentTime < (adminUser.accessTokenExpired || 0));
 
-    const repo = await this.adminUserRepository();
-
     if (isTokenValid && adminUser.accessToken) {
-      await repo.update(
+      await this.adminUserRepository.update(
         { id: adminUser.id },
         {
           lastLoginAt: currentTime + sevenDaysInSeconds,
@@ -73,7 +71,7 @@ export class AuthService {
     }
 
     const newToken = randomBytes(16).toString("hex");
-    await repo.update(
+    await this.adminUserRepository.update(
       { id: adminUser.id },
       {
         accessToken: newToken,
@@ -195,8 +193,7 @@ export class AuthService {
     }
 
     // 查找管理员用户
-    const repo = await this.adminUserRepository();
-    const adminUser = await repo.findOne({
+    const adminUser = await this.adminUserRepository.findOne({
       where: { username },
     });
     if (!adminUser) {
@@ -238,8 +235,7 @@ export class AuthService {
       throw new UnauthorizedException("临时令牌无效或已过期");
     }
 
-    const repo = await this.adminUserRepository();
-    const adminUser = await repo.findOne({
+    const adminUser = await this.adminUserRepository.findOne({
       where: { id: session.userId },
     });
     if (!adminUser) {

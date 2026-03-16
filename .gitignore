@@ -8,6 +8,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+keystore/
+data/
+wallets/
+
 ### Env files (secrets)
 .env
 .env.*

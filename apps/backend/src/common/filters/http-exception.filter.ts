@@ -9,6 +9,7 @@ import {
 import { Request, Response } from "express";
 import { ResponseDto } from "../dto/response.dto";
 import { ErrorLoggerService } from "../error-logger.service";
+import { BusinessException } from "../exceptions/business.exception";
 
 /**
  * 全局异常过滤器
@@ -30,7 +31,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let errCode: number;
     let errMsg: string;
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof BusinessException) {
+      // 业务异常：HTTP 状态仍返回 200，由 errCode 表示业务错误码
+      status = HttpStatus.OK;
+      errCode = exception.code;
+      errMsg = exception.message;
+    } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       errCode = status;
 
