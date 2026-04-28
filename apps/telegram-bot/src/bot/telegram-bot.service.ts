@@ -38,8 +38,6 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             return;
         }
 
-        const proxyUrl = this.configService.get<string>('TELEGRAM_PROXY');
-
         const options: any = {
             polling: {
                 params: {
@@ -47,18 +45,6 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                 },
             },
         };
-
-        if (proxyUrl) {
-            try {
-                const {HttpsProxyAgent} = require('https-proxy-agent');
-                options.request = {
-                    agent: new HttpsProxyAgent(proxyUrl),
-                };
-                this.logger.log(`使用代理连接 Telegram: ${proxyUrl}`);
-            } catch (error) {
-                this.logger.error(`代理配置失败: ${error instanceof Error ? error.message : String(error)}`);
-            }
-        }
 
         this.bot = new TelegramBot(token, options);
 
@@ -103,7 +89,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
 
         this.blockCheckInterval = setInterval(async () => {
             const now = Date.now();
-            
+
             try {
                 const [latestBlockNumber, localBlockNumber] = await Promise.all([
                     this.tronService.getLatestBlockNumber(fullNodeUrl),
@@ -113,13 +99,14 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                 const diff = Math.abs(latestBlockNumber - localBlockNumber);
 
                 this.logger.log(`区块高度差异: ${diff}`);
-                
+
                 // 更新成功时间，重置失败计数
                 lastSuccessTime = Date.now();
                 consecutiveFailures = 0;
                 hasSentFailureAlert = false;
 
-                if (diff > 10) {
+                // 设置告警值
+                if (diff > 15) {
                     if (now - this.lastAlertTime >= this.ALERT_COOLDOWN) {
                         const message = `⚠️ 区块高度异常告警\n\n` +
                             `最新区块: ${latestBlockNumber}\n` +
@@ -135,9 +122,9 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             } catch (error) {
                 consecutiveFailures++;
                 const timeSinceLastSuccess = now - lastSuccessTime;
-                
+
                 this.logger.error(`检查区块高度失败 (${consecutiveFailures}次): ${error instanceof Error ? error.message : String(error)}`);
-                
+
                 // 如果失败时间超过10分钟且还未发送过告警
                 if (timeSinceLastSuccess >= FAILURE_THRESHOLD && !hasSentFailureAlert) {
                     const failureDuration = Math.floor(timeSinceLastSuccess / 1000 / 60);

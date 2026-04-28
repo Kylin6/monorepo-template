@@ -1,7 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import TelegramBot from "node-telegram-bot-api";
 import { Message } from "node-telegram-bot-api";
-import { User } from "@database/index";
 import { ICommandHandler } from "../interfaces/command-handler.interface";
 import { createMainMenuKeyboard } from "../../utils/keyboard.util";
 
@@ -16,7 +15,7 @@ export class StartCommand implements ICommandHandler {
 
   private readonly logger = new Logger(StartCommand.name);
 
-  async handle(bot: TelegramBot, msg: Message, user: User): Promise<void> {
+  async handle(bot: TelegramBot, msg: Message): Promise<void> {
     const chatId = msg.chat.id;
     const userName = msg.from?.first_name || msg.from?.username || "用户";
 
@@ -55,11 +54,11 @@ export class StartCommand implements ICommandHandler {
         disable_web_page_preview: true,
       });
 
-      this.logger.log(
+      /*this.logger.log(
         `用户 ${user?.telegramId || msg.from?.id} 启动机器人 (source=${
           source || "-"
         })`
-      );
+      );*/
     } catch (error) {
       this.logger.error(`发送欢迎消息失败 (chatId: ${chatId}):`, error);
       // 如果出错，至少发送一个简单的欢迎消息

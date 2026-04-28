@@ -1,6 +1,5 @@
 import TelegramBot = require("node-telegram-bot-api");
 import { Message } from "node-telegram-bot-api";
-import { User } from "@database/index";
 
 /**
  * 命令处理器接口
@@ -24,5 +23,5 @@ export interface ICommandHandler {
   /**
    * 处理命令
    */
-  handle(bot: TelegramBot, msg: Message, user: User): Promise<void> | void;
+  handle(bot: TelegramBot, msg: Message): Promise<void> | void;
 }

@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { UserService } from "./user.service";
+// import { UserService } from "./user.service";
 import { TronService } from "./tron.service";
 
 /**
@@ -8,11 +8,11 @@ import { TronService } from "./tron.service";
  */
 @Module({
   providers: [
-    UserService,
+    // UserService,
     TronService,
   ],
   exports: [
-    UserService,
+    // UserService,
     TronService,
   ],
 })

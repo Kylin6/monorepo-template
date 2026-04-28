@@ -4,7 +4,7 @@ import { Message } from "node-telegram-bot-api";
 import { ICommandHandler } from "./interfaces/command-handler.interface";
 import { StartCommand } from "./handlers/start.command";
 import { MeCommand } from "./handlers/me.command";
-import { UserService } from "../services/user.service";
+// import { UserService } from "../services/user.service";
 
 /**
  * 命令注册器服务
@@ -18,7 +18,7 @@ export class CommandRegistryService {
   constructor(
     private readonly startCommand: StartCommand,
     private readonly meCommand: MeCommand,
-    private readonly userService: UserService
+    // private readonly userService: UserService
   ) {
     // 注册所有命令
     this.registerCommand(this.startCommand);
@@ -72,30 +72,8 @@ export class CommandRegistryService {
             this.logger.warn(`无法获取 telegramId from chatId: ${msg.chat.id}`);
             return;
           }
-
-          // 只有 /start 命令才创建用户，其他命令只查找用户
-          let user;
-/*          if (handler.command === "start") {
-            // /start 命令：查找或创建用户
-            user = await this.userService.findOrCreateByTelegramId(
-              telegramId,
-              msg.from?.username || undefined,
-              msg.from?.first_name || undefined
-            );
-          } else {
-            // 其他命令：只查找用户，不存在则提示
-            user = await this.userService.findByTelegramId(telegramId);
-            if (!user) {
-              await bot.sendMessage(
-                msg.chat.id,
-                "请先使用 /start 命令初始化您的账户。"
-              );
-              return;
-            }
-          }*/
-
           // 执行命令处理器
-          const result = handler.handle(bot, msg, user);
+          const result = handler.handle(bot, msg);
           // 如果是 Promise，捕获错误
           if (result instanceof Promise) {
             result.catch((error) => {
@@ -138,29 +116,6 @@ export class CommandRegistryService {
       this.logger.debug(
         `收到未定义的命令 /${commandName}，自动执行 /start from chatId: ${msg.chat.id}`
       );
-
-      try {
-        const telegramId = msg.from?.id?.toString();
-        if (!telegramId) {
-          return;
-        }
-
-        // 未定义的命令自动执行 /start，此时创建用户
-        const user = await this.userService.findOrCreateByTelegramId(
-          telegramId,
-          msg.from?.username || undefined,
-          msg.from?.first_name || undefined
-        );
-
-        const result = this.startCommand.handle(bot, msg, user);
-        if (result instanceof Promise) {
-          result.catch((error) => {
-            this.logger.error(`执行 /start 命令失败:`, error);
-          });
-        }
-      } catch (error) {
-        this.logger.error(`执行 /start 命令失败:`, error);
-      }
     });
 
     this.logger.log(`已注册 ${this.commands.size} 个命令到机器人`);

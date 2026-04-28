@@ -7,11 +7,7 @@
     "libs/*"
   ],
   "scripts": {
-    "build": "npm run build -w backend && npm run build -w work && npm run build -w scan-tron && npm run build -w telegram-bot",
-    "start": "npm run start:prod -w backend",
-    "start:dev": "npm run start:dev -w backend",
-    "start:worker": "npm run start:dev -w work",
-    "start:scan-tron": "npm run start:dev -w scan-tron",
+    "build": "npm run build -w telegram-bot",
     "start:telegram-bot": "npm run start:dev -w telegram-bot",
     "db:fix-generated-entities": "node tools/fix-typeorm-generated-entities.js",
     "lint": "echo \"no linter configured\"",
