@@ -96,12 +96,14 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
         this.logger.log(`开始区块高度检查任务，间隔3秒`);
         this.logger.log(`Full Node: ${fullNodeUrl}, Solid Node: ${solidNodeUrl}`);
 
-        let lastExecutionTime = Date.now();
+        let lastSuccessTime = Date.now();
+        let consecutiveFailures = 0;
+        const FAILURE_THRESHOLD = 10 * 60 * 1000; // 10分钟
+        let hasSentFailureAlert = false;
 
         this.blockCheckInterval = setInterval(async () => {
             const now = Date.now();
-            const timeDiff = now - lastExecutionTime;
-
+            
             try {
                 const [latestBlockNumber, localBlockNumber] = await Promise.all([
                     this.tronService.getLatestBlockNumber(fullNodeUrl),
@@ -110,9 +112,12 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
 
                 const diff = Math.abs(latestBlockNumber - localBlockNumber);
 
-                this.logger.log(`[间隔:${timeDiff}ms] 区块高度差异: ${diff}`);
-
-                lastExecutionTime = Date.now();
+                this.logger.log(`区块高度差异: ${diff}`);
+                
+                // 更新成功时间，重置失败计数
+                lastSuccessTime = Date.now();
+                consecutiveFailures = 0;
+                hasSentFailureAlert = false;
 
                 if (diff > 10) {
                     if (now - this.lastAlertTime >= this.ALERT_COOLDOWN) {
@@ -120,7 +125,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                             `最新区块: ${latestBlockNumber}\n` +
                             `本地节点: ${localBlockNumber}\n` +
                             `差值: ${diff}\n` +
-                            `时间: ${new Date().toLocaleString('zh-CN')}`;
+                            `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
 
                         await this.sendMessageToUser(alertChatId, message);
                         this.lastAlertTime = now;
@@ -128,7 +133,25 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                     }
                 }
             } catch (error) {
-                this.logger.error(`检查区块高度失败: ${error instanceof Error ? error.message : String(error)}`);
+                consecutiveFailures++;
+                const timeSinceLastSuccess = now - lastSuccessTime;
+                
+                this.logger.error(`检查区块高度失败 (${consecutiveFailures}次): ${error instanceof Error ? error.message : String(error)}`);
+                
+                // 如果失败时间超过10分钟且还未发送过告警
+                if (timeSinceLastSuccess >= FAILURE_THRESHOLD && !hasSentFailureAlert) {
+                    const failureDuration = Math.floor(timeSinceLastSuccess / 1000 / 60);
+                    const message = `🚨 区块高度检查持续失败告警\n\n` +
+                        `失败时长: ${failureDuration} 分钟\n` +
+                        `连续失败次数: ${consecutiveFailures}\n` +
+                        `最后成功时间: ${new Date(lastSuccessTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
+                        `当前时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
+                        `请检查节点连接是否正常！`;
+
+                    await this.sendMessageToUser(alertChatId, message);
+                    hasSentFailureAlert = true;
+                    this.logger.error(`已发送持续失败告警，失败时长: ${failureDuration}分钟`);
+                }
             }
         }, 3000);
     }
