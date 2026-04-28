@@ -4,11 +4,6 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY apps/telegram-bot/package.json ./apps/telegram-bot/package.json
-COPY libs/config/package.json ./libs/config/package.json
-COPY libs/database/package.json ./libs/database/package.json
-COPY libs/redis/package.json ./libs/redis/package.json
-COPY libs/queue/package.json ./libs/queue/package.json
-COPY libs/common/package.json ./libs/common/package.json
 
 RUN npm install
 

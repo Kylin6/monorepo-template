@@ -75,7 +75,7 @@ export class CommandRegistryService {
 
           // 只有 /start 命令才创建用户，其他命令只查找用户
           let user;
-          if (handler.command === "start") {
+/*          if (handler.command === "start") {
             // /start 命令：查找或创建用户
             user = await this.userService.findOrCreateByTelegramId(
               telegramId,
@@ -92,7 +92,7 @@ export class CommandRegistryService {
               );
               return;
             }
-          }
+          }*/
 
           // 执行命令处理器
           const result = handler.handle(bot, msg, user);

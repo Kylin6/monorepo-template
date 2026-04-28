@@ -7,7 +7,7 @@
     "libs/*"
   ],
   "scripts": {
-    "build": "npm run build -w backend && npm run build -w work && npm run build -w scan-tron",
+    "build": "npm run build -w backend && npm run build -w work && npm run build -w scan-tron && npm run build -w telegram-bot",
     "start": "npm run start:prod -w backend",
     "start:dev": "npm run start:dev -w backend",
     "start:worker": "npm run start:dev -w work",
@@ -41,12 +41,14 @@
     "bullmq": "^5.67.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
+    "https-proxy-agent": "^9.0.0",
     "js-sha3": "^0.9.3",
     "mysql2": "^3.16.2",
     "nats": "^2.29.3",
     "redis": "^5.10.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "socks-proxy-agent": "^10.0.0",
     "svg-captcha": "^1.4.0",
     "typeorm": "^0.3.28"
   }

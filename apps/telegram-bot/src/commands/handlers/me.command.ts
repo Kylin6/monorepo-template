@@ -15,10 +15,10 @@ export class MeCommand implements ICommandHandler {
   handle(bot: TelegramBot, msg: Message, user: User): void {
     const chatId = msg.chat.id;
     const message =
-      `当前窗口ID: <code>${chatId}</code>\n` +
-      `用户ID: <code>${user.id}</code>\n` +
-      `Telegram ID: <code>${user.telegramId || "未绑定"}</code>\n` +
-      `用户名: ${user.telegramUsername || user.telegramNickname || "未设置"}`;
+      `当前窗口ID: <code>${chatId}</code>\n`
+      // `用户ID: <code>${user?.id}</code>\n` +
+      // `Telegram ID: <code>${user.telegramId || "未绑定"}</code>\n` +
+      // `用户名: ${user.telegramUsername || user.telegramNickname || "未设置"}`;
 
     bot.sendMessage(chatId, message, {
       parse_mode: "HTML",

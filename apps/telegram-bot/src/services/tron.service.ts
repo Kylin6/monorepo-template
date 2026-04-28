@@ -1,13 +1,37 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 
 @Injectable()
 export class TronService {
-  // 预留：对接 tronweb / 扫链服务等
+  private readonly logger = new Logger(TronService.name);
 
   async validateAddress(
     _address: string
   ): Promise<{ valid: boolean; message?: string }> {
-    // 简化实现：只做基础格式校验，真正的链上校验可后续接入 tronweb
     return { valid: true };
+  }
+
+  async getLatestBlockNumber(nodeUrl: string): Promise<number> {
+    try {
+      const response = await fetch(`${nodeUrl}/wallet/getnowblock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.block_header?.raw_data?.number ?? 0;
+    } catch (error) {
+      this.logger.error(`获取最新区块失败: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    }
+  }
+
+  async getNodeBlockNumber(nodeUrl: string): Promise<number> {
+    return this.getLatestBlockNumber(nodeUrl);
   }
 }

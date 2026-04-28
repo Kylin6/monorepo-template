@@ -1,114 +1,159 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import {Injectable, OnModuleDestroy, Logger, OnApplicationBootstrap} from "@nestjs/common";
+import {ConfigService} from "@nestjs/config";
 import TelegramBot from "node-telegram-bot-api";
-import { CommandsService } from "../commands/commands.service";
-import { MessageHandler } from "../handlers/message.handler";
-import { CallbackHandler } from "../handlers/callback.handler";
-import { UserService } from "../services/user.service";
+import {CommandsService} from "../commands/commands.service";
+import {TronService} from "../services/tron.service";
 
 @Injectable()
-export class TelegramBotService implements OnModuleInit {
-  private bot: TelegramBot | null = null;
+export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestroy {
+    private bot: TelegramBot | null = null;
+    private readonly logger = new Logger(TelegramBotService.name);
+    private blockCheckInterval: NodeJS.Timeout | null = null;
+    private lastAlertTime: number = 0;
+    private readonly ALERT_COOLDOWN = 60000;
+    private isInitialized = false;
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly commandsService: CommandsService,
-    private readonly messageHandler: MessageHandler,
-    private readonly callbackHandler: CallbackHandler,
-    private readonly userService: UserService
-  ) {}
-
-  onModuleInit() {
-    const token = this.configService.get<string>("TELEGRAM_BOT_TOKEN");
-
-    if (!token) {
-      // eslint-disable-next-line no-console
-      console.error(
-        "TELEGRAM_BOT_TOKEN is not set. Telegram bot will not be started."
-      );
-      return;
+    constructor(
+        private readonly configService: ConfigService,
+        private readonly commandsService: CommandsService,
+        private readonly tronService: TronService
+    ) {
     }
 
-    this.bot = new TelegramBot(token, { polling: true });
+    onApplicationBootstrap() {
+        if (this.isInitialized) {
+            this.logger.warn('TelegramBotService 已经初始化，跳过重复初始化');
+            return;
+        }
 
-    this.registerHandlers(this.bot);
+        this.isInitialized = true;
+        this.logger.log('开始初始化 Telegram Bot...');
 
-    // eslint-disable-next-line no-console
-    console.log("Telegram bot started with polling mode");
-  }
+        const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN') || '8734688749:AAHPpDeNJXZAO55guTuexwSCT_bH6WkbhsU';
 
-  async sendMessageToUser(telegramId: string, text: string): Promise<void> {
-    if (!this.bot) {
-      return;
+        if (!token) {
+            console.error(
+                "TELEGRAM_BOT_TOKEN is not set. Telegram bot will not be started."
+            );
+            return;
+        }
+
+        const proxyUrl = this.configService.get<string>('TELEGRAM_PROXY');
+
+        const options: any = {
+            polling: {
+                params: {
+                    timeout: 10,
+                },
+            },
+        };
+
+        if (proxyUrl) {
+            try {
+                const {HttpsProxyAgent} = require('https-proxy-agent');
+                options.request = {
+                    agent: new HttpsProxyAgent(proxyUrl),
+                };
+                this.logger.log(`使用代理连接 Telegram: ${proxyUrl}`);
+            } catch (error) {
+                this.logger.error(`代理配置失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+
+        this.bot = new TelegramBot(token, options);
+
+        this.registerHandlers(this.bot);
+
+        this.logger.log("Telegram bot started with polling mode");
+
+        this.startBlockCheckTask();
+
     }
-    const chatId = Number(telegramId);
-    if (!Number.isFinite(chatId)) {
-      return;
+
+    onModuleDestroy() {
+        if (this.blockCheckInterval) {
+            clearInterval(this.blockCheckInterval);
+            this.blockCheckInterval = null;
+            this.logger.log('区块检查定时任务已停止');
+        }
     }
-    await this.bot.sendMessage(chatId, text, {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
-  }
 
-  private registerHandlers(bot: TelegramBot) {
-    // 1) 注册命令（/start /me 等）
-    this.commandsService.registerCommands(bot);
+    private startBlockCheckTask(): void {
+        if (this.blockCheckInterval) {
+            this.logger.warn('区块检查任务已在运行，跳过创建');
+            return;
+        }
 
-    // 2) 消息处理（非命令文本）
-    bot.on("message", async (msg) => {
-      if (!msg.text || msg.text.startsWith("/")) {
-        return;
-      }
-      // 仅处理私聊文本
-      if (msg.chat?.type !== "private") {
-        return;
-      }
+        const fullNodeUrl = this.configService.get<string>('TRON_FULL_NODE') || 'https://api.trongrid.io';
+        const solidNodeUrl = this.configService.get<string>('TRON_SOLID_NODE') || 'http://66.29.147.102:43921';
+        const alertChatId = this.configService.get<string>('BLOCK_ALERT_CHAT_ID') || '-5239825684';
 
-      const telegramId = msg.from?.id?.toString();
-      if (!telegramId) {
-        return;
-      }
+        if (!alertChatId) {
+            this.logger.warn('BLOCK_ALERT_CHAT_ID 未配置，将不会发送告警消息');
+            return;
+        }
 
-      const user = await this.userService.findByTelegramId(telegramId);
-      if (!user) {
-        await bot.sendMessage(msg.chat.id, "请先使用 /start 初始化您的账户。");
-        return;
-      }
+        this.logger.log(`开始区块高度检查任务，间隔3秒`);
+        this.logger.log(`Full Node: ${fullNodeUrl}, Solid Node: ${solidNodeUrl}`);
 
-      await this.messageHandler.handle(bot as any, msg as any, user as any);
-    });
+        let lastExecutionTime = Date.now();
 
-    // 3) 回调（inline keyboard）
-    bot.on("callback_query", async (query) => {
-      // query.message 可能为空（例如 inline message），这里先做安全检查
-      if (!query.message) {
-        return;
-      }
-      if (query.message.chat?.type !== "private") {
-        return;
-      }
+        this.blockCheckInterval = setInterval(async () => {
+            const now = Date.now();
+            const timeDiff = now - lastExecutionTime;
 
-      const telegramId = query.from?.id?.toString();
-      if (!telegramId) {
-        return;
-      }
+            try {
+                const [latestBlockNumber, localBlockNumber] = await Promise.all([
+                    this.tronService.getLatestBlockNumber(fullNodeUrl),
+                    this.tronService.getNodeBlockNumber(solidNodeUrl),
+                ]);
 
-      const user = await this.userService.findByTelegramId(telegramId);
-      if (!user) {
-        await bot.sendMessage(
-          query.message.chat.id,
-          "请先使用 /start 初始化您的账户。"
-        );
-        return;
-      }
+                const diff = Math.abs(latestBlockNumber - localBlockNumber);
 
-      await this.callbackHandler.handle(bot as any, query as any, user as any);
-    });
+                this.logger.log(`[间隔:${timeDiff}ms] 区块高度差异: ${diff}`);
 
-    bot.on("polling_error", (err) => {
-      // eslint-disable-next-line no-console
-      console.error("Telegram 网络波动", err);
-    });
-  }
+                lastExecutionTime = Date.now();
+
+                if (diff > 10) {
+                    if (now - this.lastAlertTime >= this.ALERT_COOLDOWN) {
+                        const message = `⚠️ 区块高度异常告警\n\n` +
+                            `最新区块: ${latestBlockNumber}\n` +
+                            `本地节点: ${localBlockNumber}\n` +
+                            `差值: ${diff}\n` +
+                            `时间: ${new Date().toLocaleString('zh-CN')}`;
+
+                        await this.sendMessageToUser(alertChatId, message);
+                        this.lastAlertTime = now;
+                        this.logger.warn(`区块高度差异过大: ${diff}, 已发送告警`);
+                    }
+                }
+            } catch (error) {
+                this.logger.error(`检查区块高度失败: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }, 3000);
+    }
+
+    async sendMessageToUser(telegramId: string, text: string): Promise<void> {
+        if (!this.bot) {
+            return;
+        }
+        const chatId = Number(telegramId);
+        if (!Number.isFinite(chatId)) {
+            return;
+        }
+        await this.bot.sendMessage(chatId, text, {
+            parse_mode: "HTML",
+            disable_web_page_preview: true,
+        });
+    }
+
+    private registerHandlers(bot: TelegramBot) {
+        // 注册命令（/start /me 等）
+        this.commandsService.registerCommands(bot);
+
+        bot.on("polling_error", (err) => {
+            this.logger.error(`Telegram 网络波动: ${err.message || err}`);
+            this.logger.error(`错误详情: ${JSON.stringify(err)}`);
+        });
+    }
 }

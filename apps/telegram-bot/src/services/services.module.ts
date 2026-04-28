@@ -1,9 +1,5 @@
 import { Module } from "@nestjs/common";
 import { UserService } from "./user.service";
-import { TaskService } from "./task.service";
-import { SysCfgService } from "./syscfg.service";
-import { OrderService } from "./order.service";
-import { RechargeService } from "./recharge.service";
 import { TronService } from "./tron.service";
 
 /**
@@ -13,18 +9,10 @@ import { TronService } from "./tron.service";
 @Module({
   providers: [
     UserService,
-    TaskService,
-    SysCfgService,
-    OrderService,
-    RechargeService,
     TronService,
   ],
   exports: [
     UserService,
-    TaskService,
-    SysCfgService,
-    OrderService,
-    RechargeService,
     TronService,
   ],
 })
