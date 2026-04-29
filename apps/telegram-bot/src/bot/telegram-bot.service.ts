@@ -11,6 +11,8 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
     private blockCheckInterval: NodeJS.Timeout | null = null;
     private lastAlertTime: number = 0;
     private readonly ALERT_COOLDOWN = 60000;
+    private isAlertSuppressed: boolean = false; // 新增：标记是否处于告警抑制状态
+    private alertSuppressionStartTime: number = 0; // 新增：记录告警抑制开始时间
     private isInitialized = false;
 
     constructor(
@@ -55,7 +57,6 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
         this.startBlockCheckTask();
 
     }
-
     onModuleDestroy() {
         if (this.blockCheckInterval) {
             clearInterval(this.blockCheckInterval);
@@ -108,16 +109,61 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                 hasSentFailureAlert = false;
 
                 if (diff > blockDiffThreshold) {
-                    if (now - this.lastAlertTime >= this.ALERT_COOLDOWN) {
-                        const message = `⚠️ 区块高度异常告警\n\n` +
+                    // 检查是否需要进入告警抑制状态
+                    if (!this.isAlertSuppressed) {
+                        // 如果还没有进入抑制状态，检查是否已经持续告警超过10分钟
+                        if (this.alertSuppressionStartTime === 0) {
+                            // 记录首次超阈值时间
+                            this.alertSuppressionStartTime = now;
+                        } else if (now - this.alertSuppressionStartTime >= 10 * 60 * 1000) { // 10分钟
+                            // 持续超阈值超过10分钟，进入告警抑制状态
+                            this.isAlertSuppressed = true;
+                            this.logger.warn(`区块高度差异持续超过阈值10分钟，进入告警抑制状态`);
+
+                            // 发送告警抑制通知
+                            const suppressionMessage = `⚠️ 区块高度差异持续超过阈值超过10分钟，暂时停止发送告警\n\n` +
+                                `最新区块: ${latestBlockNumber}\n` +
+                                `本地节点: ${localBlockNumber}\n` +
+                                `差值: ${diff} (阈值: ${blockDiffThreshold})\n` +
+                                `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
+                                `系统将在区块高度恢复正常后重新发送通知。`;
+
+                            await this.sendMessageToUser(alertChatId, suppressionMessage);
+                        } else {
+                            // 在10分钟内，正常发送告警（受冷却时间控制）
+                            if (now - this.lastAlertTime >= this.ALERT_COOLDOWN) {
+                                const message = `⚠️ 区块高度异常告警\n\n` +
+                                    `最新区块: ${latestBlockNumber}\n` +
+                                    `本地节点: ${localBlockNumber}\n` +
+                                    `差值: ${diff} \n` +
+                                    `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
+
+                                await this.sendMessageToUser(alertChatId, message);
+                                this.lastAlertTime = now;
+                                this.logger.warn(`区块高度差异过大: ${diff}, 已发送告警`);
+                            }
+                        }
+                    }
+                    // 如果已经在告警抑制状态，则不发送任何告警
+                } else {
+                    // 区块高度恢复正常
+                    if (this.isAlertSuppressed) {
+                        // 从告警抑制状态恢复，发送恢复正常通知
+                        this.isAlertSuppressed = false;
+                        this.alertSuppressionStartTime = 0;
+
+                        const recoveryMessage = `✅ 区块高度差异恢复正常\n\n` +
                             `最新区块: ${latestBlockNumber}\n` +
                             `本地节点: ${localBlockNumber}\n` +
-                            `差值: ${diff} (阈值: ${blockDiffThreshold})\n` +
-                            `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
+                            `差值: ${diff} \n` +
+                            `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
+                            `系统将恢复正常的告警机制。`;
 
-                        await this.sendMessageToUser(alertChatId, message);
-                        this.lastAlertTime = now;
-                        this.logger.warn(`区块高度差异过大: ${diff}, 已发送告警`);
+                        await this.sendMessageToUser(alertChatId, recoveryMessage);
+                        this.logger.log(`区块高度差异恢复正常: ${diff}, 已发送恢复通知`);
+                    } else {
+                        // 正常情况下的日志记录
+                        this.alertSuppressionStartTime = 0; // 重置开始时间
                     }
                 }
             } catch (error) {
