@@ -89,6 +89,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
         let consecutiveFailures = 0;
         const FAILURE_THRESHOLD = 10 * 60 * 1000; // 10分钟
         let hasSentFailureAlert = false;
+        let hadPreviousFailure = false;
 
         this.blockCheckInterval = setInterval(async () => {
             const now = Date.now();
@@ -102,6 +103,24 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                 const diff = Math.abs(latestBlockNumber - localBlockNumber);
 
                 this.logger.log(`区块高度差异: ${diff}`);
+                
+                // 如果之前有过失败，现在恢复了，发送恢复通知
+                if (hadPreviousFailure) {
+                    const failureDuration = Math.floor((now - lastSuccessTime) / 1000 / 60);
+                    const recoveryMessage = `✅ 节点连接已恢复正常\n\n` +
+                        `最后成功时间: ${new Date(lastSuccessTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
+                        `故障时长: ${failureDuration} 分钟\n` +
+                        `连续失败次数: ${consecutiveFailures}\n` +
+                        `当前区块高度: ${localBlockNumber}\n` +
+                        `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
+                        `系统已恢复正常的区块监控。`;
+
+                    await this.sendMessageToUser(alertChatId, recoveryMessage);
+                    this.logger.log(`节点连接已恢复，故障时长: ${failureDuration}分钟`);
+                    
+                    // 重置状态
+                    hadPreviousFailure = false;
+                }
                 
                 // 更新成功时间，重置失败计数
                 lastSuccessTime = Date.now();
@@ -171,6 +190,9 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                 const timeSinceLastSuccess = now - lastSuccessTime;
                 
                 this.logger.error(`检查区块高度失败 (${consecutiveFailures}次): ${error instanceof Error ? error.message : String(error)}`);
+                
+                // 标记曾经出现过失败
+                hadPreviousFailure = true;
                 
                 // 如果失败时间超过10分钟且还未发送过告警
                 if (timeSinceLastSuccess >= FAILURE_THRESHOLD && !hasSentFailureAlert) {
