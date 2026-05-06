@@ -87,9 +87,12 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
 
         let lastSuccessTime = Date.now();
         let consecutiveFailures = 0;
-        const FAILURE_THRESHOLD = 10 * 60 * 1000; // 10分钟
+        const FAILURE_THRESHOLD = 60 * 1000; // 1分钟
         let hasSentFailureAlert = false;
         let hadPreviousFailure = false;
+        let failureStartTime = 0; // 记录开始失败的时间
+        let lastRecoveryAlertTime = 0; // 记录上次发送恢复通知的时间
+        const RECOVERY_ALERT_COOLDOWN = 5 * 60 * 1000; // 恢复通知冷却时间：5分钟
 
         this.blockCheckInterval = setInterval(async () => {
             const now = Date.now();
@@ -102,24 +105,31 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
 
                 const diff = Math.abs(latestBlockNumber - localBlockNumber);
 
-                this.logger.log(`区块高度差异: ${diff}`);
+                // this.logger.log(`区块高度差异: ${diff}`);
                 
-                // 如果之前有过失败，现在恢复了，发送恢复通知
-                if (hadPreviousFailure) {
-                    const failureDuration = Math.floor((now - lastSuccessTime) / 1000 / 60);
+                // 如果之前发送过失败告警，现在恢复了，发送恢复通知
+                if (hasSentFailureAlert) {
+                    const failureDuration = Math.floor((now - failureStartTime) / 1000); // 秒
+                    
                     const recoveryMessage = `✅ 节点连接已恢复正常\n\n` +
                         `最后成功时间: ${new Date(lastSuccessTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
-                        `故障时长: ${failureDuration} 分钟\n` +
+                        `故障时长: ${failureDuration} 秒\n` +
                         `连续失败次数: ${consecutiveFailures}\n` +
                         `当前区块高度: ${localBlockNumber}\n` +
                         `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
                         `系统已恢复正常的区块监控。`;
 
                     await this.sendMessageToUser(alertChatId, recoveryMessage);
-                    this.logger.log(`节点连接已恢复，故障时长: ${failureDuration}分钟`);
+                    this.logger.log(`节点连接已恢复，故障时长: ${failureDuration}秒`);
                     
                     // 重置状态
+                    hasSentFailureAlert = false;
                     hadPreviousFailure = false;
+                    failureStartTime = 0;
+                } else if (hadPreviousFailure && failureStartTime > 0) {
+                    // 有过失败但未发送告警，只重置状态，不发送恢复通知
+                    hadPreviousFailure = false;
+                    failureStartTime = 0;
                 }
                 
                 // 更新成功时间，重置失败计数
@@ -191,14 +201,17 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                 
                 this.logger.error(`检查区块高度失败 (${consecutiveFailures}次): ${error instanceof Error ? error.message : String(error)}`);
                 
-                // 标记曾经出现过失败
-                hadPreviousFailure = true;
+                // 标记曾经出现过失败，并记录开始失败的时间
+                if (!hadPreviousFailure) {
+                    hadPreviousFailure = true;
+                    failureStartTime = now; // 首次失败时记录时间
+                }
                 
-                // 如果失败时间超过10分钟且还未发送过告警
+                // 如果失败时间超过1分钟且还未发送过告警
                 if (timeSinceLastSuccess >= FAILURE_THRESHOLD && !hasSentFailureAlert) {
-                    const failureDuration = Math.floor(timeSinceLastSuccess / 1000 / 60);
+                    const failureDuration = Math.floor(timeSinceLastSuccess / 1000); // 改为秒
                     const message = `🚨 区块高度检查持续失败告警\n\n` +
-                        `失败时长: ${failureDuration} 分钟\n` +
+                        `失败时长: ${failureDuration} 秒\n` +
                         `连续失败次数: ${consecutiveFailures}\n` +
                         `最后成功时间: ${new Date(lastSuccessTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
                         `当前时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
@@ -206,7 +219,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
 
                     await this.sendMessageToUser(alertChatId, message);
                     hasSentFailureAlert = true;
-                    this.logger.error(`已发送持续失败告警，失败时长: ${failureDuration}分钟`);
+                    this.logger.error(`已发送持续失败告警，失败时长: ${failureDuration}秒`);
                 }
             }
         }, 3000);
