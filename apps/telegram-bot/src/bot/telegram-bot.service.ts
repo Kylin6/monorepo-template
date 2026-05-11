@@ -11,8 +11,6 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
     private blockCheckInterval: NodeJS.Timeout | null = null;
     private lastAlertTime: number = 0;
     private readonly ALERT_COOLDOWN = 60000;
-    private isAlertSuppressed: boolean = false; // 新增：标记是否处于告警抑制状态
-    private alertSuppressionStartTime: number = 0; // 新增：记录告警抑制开始时间
     private isInitialized = false;
 
     constructor(
@@ -101,6 +99,12 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
         let node2ConsecutiveFailures = 0;
         let node1LastSuccessTime = Date.now();
         let node2LastSuccessTime = Date.now();
+        
+        // 分别跟踪两个节点的告警抑制状态
+        let node1IsSuppressed = false;
+        let node1SuppressionStartTime = 0;
+        let node2IsSuppressed = false;
+        let node2SuppressionStartTime = 0;
 
         this.blockCheckInterval = setInterval(async () => {
             const now = Date.now();
@@ -159,7 +163,13 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                         diff1,
                         blockDiffThreshold,
                         alertChatId,
-                        now
+                        now,
+                        node1IsSuppressed,
+                        node1SuppressionStartTime,
+                        (suppressed, startTime) => {
+                            node1IsSuppressed = suppressed;
+                            node1SuppressionStartTime = startTime;
+                        }
                     );
                 }
             } else if (node1Result.status === 'rejected') {
@@ -234,7 +244,13 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                         diff2,
                         blockDiffThreshold,
                         alertChatId,
-                        now
+                        now,
+                        node2IsSuppressed,
+                        node2SuppressionStartTime,
+                        (suppressed, startTime) => {
+                            node2IsSuppressed = suppressed;
+                            node2SuppressionStartTime = startTime;
+                        }
                     );
                 }
             } else if (node2Result.status === 'rejected') {
@@ -294,17 +310,20 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
         diff: number,
         threshold: number,
         alertChatId: string,
-        now: number
+        now: number,
+        isSuppressed: boolean,
+        suppressionStartTime: number,
+        updateState: (suppressed: boolean, startTime: number) => void
     ): Promise<void> {
         // 检查是否需要进入告警抑制状态
-        if (!this.isAlertSuppressed) {
+        if (!isSuppressed) {
             // 如果还没有进入抑制状态，检查是否已经持续告警超过10分钟
-            if (this.alertSuppressionStartTime === 0) {
+            if (suppressionStartTime === 0) {
                 // 记录首次超阈值时间
-                this.alertSuppressionStartTime = now;
-            } else if (now - this.alertSuppressionStartTime >= 10 * 60 * 1000) { // 10分钟
+                updateState(false, now);
+            } else if (now - suppressionStartTime >= 10 * 60 * 1000) { // 10分钟
                 // 持续超阈值超过10分钟，进入告警抑制状态
-                this.isAlertSuppressed = true;
+                updateState(true, suppressionStartTime);
                 this.logger.warn(`${nodeName} 区块高度差异持续超过阈值10分钟，进入告警抑制状态`);
 
                 // 发送告警抑制通知
