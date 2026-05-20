@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 // import { UserService } from "./user.service";
 import { TronService } from "./tron.service";
+import { MonitorService } from "./monitor.service";
 
 /**
  * Services 模块
@@ -10,10 +11,12 @@ import { TronService } from "./tron.service";
   providers: [
     // UserService,
     TronService,
+    MonitorService,
   ],
   exports: [
     // UserService,
     TronService,
+    MonitorService,
   ],
 })
 export class ServicesModule {}

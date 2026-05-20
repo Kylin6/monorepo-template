@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { StartCommand } from "./handlers/start.command";
 import { MeCommand } from "./handlers/me.command";
+import { StartMonitorCommand } from "./handlers/start-monitor.command";
+import { StopMonitorCommand } from "./handlers/stop-monitor.command";
 import { CommandRegistryService } from "./command-registry.service";
 import { CommandsService } from "./commands.service";
 import { ServicesModule } from "../services/services.module";
@@ -11,11 +13,13 @@ import { ServicesModule } from "../services/services.module";
  */
 @Module({
   imports: [
-    ServicesModule, // 导入 ServicesModule 以获取 UserService
+    ServicesModule, // 导入 ServicesModule 以获取 UserService 和 MonitorService
   ],
   providers: [
     StartCommand,
     MeCommand,
+    StartMonitorCommand,
+    StopMonitorCommand,
     CommandRegistryService,
     CommandsService,
   ],

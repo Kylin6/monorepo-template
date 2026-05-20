@@ -4,6 +4,8 @@ import { Message } from "node-telegram-bot-api";
 import { ICommandHandler } from "./interfaces/command-handler.interface";
 import { StartCommand } from "./handlers/start.command";
 import { MeCommand } from "./handlers/me.command";
+import { StartMonitorCommand } from "./handlers/start-monitor.command";
+import { StopMonitorCommand } from "./handlers/stop-monitor.command";
 // import { UserService } from "../services/user.service";
 
 /**
@@ -18,11 +20,15 @@ export class CommandRegistryService {
   constructor(
     private readonly startCommand: StartCommand,
     private readonly meCommand: MeCommand,
+    private readonly startMonitorCommand: StartMonitorCommand,
+    private readonly stopMonitorCommand: StopMonitorCommand,
     // private readonly userService: UserService
   ) {
     // 注册所有命令
     this.registerCommand(this.startCommand);
     this.registerCommand(this.meCommand);
+    this.registerCommand(this.startMonitorCommand);
+    this.registerCommand(this.stopMonitorCommand);
   }
 
   /**
@@ -57,10 +63,10 @@ export class CommandRegistryService {
     for (const handler of this.commands.values()) {
       bot.onText(handler.pattern, async (msg) => {
         const isPrivateChat = msg.chat?.type === "private";
-        // 默认只在私聊响应，/me 允许在群组中使用
+/*        // 默认只在私聊响应，/me 允许在群组中使用
         if (!isPrivateChat && handler.command !== "me") {
           return;
-        }
+        }*/
 
         this.logger.debug(
           `收到命令 /${handler.command} from chatId: ${msg.chat.id}`
