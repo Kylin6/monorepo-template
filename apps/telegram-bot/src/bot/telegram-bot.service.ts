@@ -73,12 +73,44 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
 
         const fullNodeUrl = this.configService.get<string>('TRON_FULL_NODE') || 'https://api.trongrid.io';
         // 本地节点数组（从环境变量中读取逗号分隔的字符串）
-        const solidNodesStr = this.configService.get<string>('TRON_SOLID_NODES') || 
-            'http://66.29.147.102:43921,http://45.137.213.34:43921';
+        const solidNodesStr = this.configService.get<string>('TRON_SOLID_NODES');
+        
+        // 检查 TRON_SOLID_NODES 是否配置
+        if (!solidNodesStr || solidNodesStr.trim() === '') {
+            this.logger.error('TRON_SOLID_NODES 未配置，区块监控任务无法启动');
+            // 发送告警消息
+            const alertChatId = this.configService.get<string>('BLOCK_ALERT_CHAT_ID');
+            if (alertChatId && this.bot) {
+                const errorMessage = `🚨 配置错误：监控节点地址未配置\n\n` +
+                    `环境变量 TRON_SOLID_NODES 未设置或为空\n\n` +
+                    `请在 .env 文件中配置监控节点地址\n` +
+                    `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
+                
+                this.sendMessageToUser(alertChatId, errorMessage).catch(err => {
+                    this.logger.error('发送配置错误告警失败:', err);
+                });
+            }
+            return;
+        }
+        
         const solidNodes = solidNodesStr.split(',').map(url => url.trim()).filter(url => url.length > 0);
         
         if (solidNodes.length === 0) {
-            this.logger.error('TRON_SOLID_NODES 未配置或格式错误，区块监控任务无法启动');
+            this.logger.error('TRON_SOLID_NODES 格式错误，区块监控任务无法启动');
+            // 发送告警消息
+            const alertChatId = this.configService.get<string>('BLOCK_ALERT_CHAT_ID');
+            if (alertChatId && this.bot) {
+                const errorMessage = `🚨 配置错误：监控节点地址格式错误\n\n` +
+                    `环境变量 TRON_SOLID_NODES 的值格式不正确\n` +
+                    `当前值: ${solidNodesStr}\n\n` +
+                    `请使用逗号分隔多个节点地址，例如：\n` +
+                    `TRON_SOLID_NODES=http://66.29.147.102:43921,http://66.29.147.112:43921\n\n` +
+                    `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
+                
+                this.sendMessageToUser(alertChatId, errorMessage).catch(err => {
+                    this.logger.error('发送配置错误告警失败:', err);
+                });
+            }
             return;
         }
         const alertChatId = this.configService.get<string>('BLOCK_ALERT_CHAT_ID') || '-5239825684';
@@ -109,6 +141,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             isSuppressed: false,
             suppressionStartTime: 0,
             lastAlertTime: 0,
+            hasSentFailureAlert: false,  // 标记是否发送过失败告警
         }));
 
         this.blockCheckInterval = setInterval(async () => {
@@ -159,6 +192,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             isSuppressed: boolean;
             suppressionStartTime: number;
             lastAlertTime: number;
+            hasSentFailureAlert: boolean;  // 标记是否发送过失败告警
         },
         now: number,
         blockDiffThreshold: number,
@@ -173,18 +207,21 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             return null;
         });
 
-        // 如果全节点或本地节点请求失败
-        if (fullNodeResult === null || localBlockNumber === null) {
+        // 如果本地节点请求失败
+        if (localBlockNumber === null) {
             // 处理节点失败逻辑
             state.consecutiveFailures++;
             const timeSinceLastSuccess = now - state.lastSuccessTime;
             
             this.logger.error(`节点${solidNodeUrl}检查失败 (${state.consecutiveFailures}次)`);
             
-            // 标记节点失败
+            // 标记节点失败（只在首次失败时记录开始时间）
             if (!state.failed) {
                 state.failed = true;
                 state.failureStartTime = now;
+                this.logger.log(`节点${solidNodeUrl}首次检测到失败，记录失败开始时间`);
+            } else {
+                this.logger.log(`节点${solidNodeUrl}持续失败，当前连续失败次数: ${state.consecutiveFailures}`);
             }
             
             // 如果失败时间超过1分钟
@@ -203,20 +240,27 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             }
             return;
         }
+        
+        // 如果全节点请求失败，但本地节点成功，跳过本次检查
+        if (fullNodeResult === null) {
+            this.logger.warn(`全节点请求失败，跳过节点${solidNodeUrl}的区块高度差异检查`);
+            return;
+        }
 
         // 节点请求成功
         const latestBlockNumber = fullNodeResult;
-        const diff = Math.abs(latestBlockNumber - localBlockNumber);
+        const diff = latestBlockNumber - localBlockNumber;  // 不使用绝对值，保留正负号
 
-        // 只在差异超过阈值的一半时打印日志，减少日志输出
-        if (diff > blockDiffThreshold / 2) {
-            this.logger.log(`节点${solidNodeUrl} 区块高度检查 - 全节点: ${latestBlockNumber}, 本地节点: ${localBlockNumber}, 差异: ${diff}, 阈值: ${blockDiffThreshold}`);
-        }
+        // 每次都打印区块高度检查日志
+        // this.logger.log(`节点${solidNodeUrl} 区块高度检查 - 全节点: ${latestBlockNumber}, 本地节点: ${localBlockNumber}, 差异: ${diff}, 阈值: ${blockDiffThreshold}`);
         
         // 检查节点是否从失败中恢复
         if (state.failed) {
             const failureDuration = Math.floor((now - state.failureStartTime) / 1000);
-            if (failureDuration >= 60) {
+            this.logger.log(`节点${solidNodeUrl}检测到恢复 - failureStartTime: ${new Date(state.failureStartTime).toLocaleString()}, failureDuration: ${failureDuration}秒`);
+            
+            // 只在故障时长 >= 60秒 且 发送过失败告警时才发送恢复通知
+            if (failureDuration >= 60 && state.hasSentFailureAlert) {
                 const recoveryMessage = `✅ 节点${solidNodeUrl}连接已恢复正常\n\n` +
                     `节点地址: ${solidNodeUrl}\n` +
                     `最后成功时间: ${new Date(state.lastSuccessTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
@@ -227,21 +271,41 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
 
                 await this.sendMessageToUser(alertChatId, recoveryMessage);
                 this.logger.log(`节点${solidNodeUrl}连接已恢复，故障时长: ${failureDuration}秒`);
+                
+                // 立即重置失败状态，避免重复发送恢复通知
+                state.failed = false;
+                state.failureStartTime = 0;
+                state.consecutiveFailures = 0;
+                state.isSuppressed = false;
+                state.suppressionStartTime = 0;
+                state.lastAlertTime = 0;
+                state.hasSentFailureAlert = false;
+                
+                // 更新节点成功时间（在重置后立即更新）
+                state.lastSuccessTime = now;
+                return;  // 提前返回，避免后面再次更新 lastSuccessTime
+            } else if (failureDuration >= 60 && !state.hasSentFailureAlert) {
+                this.logger.log(`节点${solidNodeUrl}故障时长达到60秒，但未发送过失败告警，跳过恢复通知`);
+                
+                // 重置失败状态
+                state.failed = false;
+                state.failureStartTime = 0;
+                state.consecutiveFailures = 0;
+                state.isSuppressed = false;
+                state.suppressionStartTime = 0;
+                state.lastAlertTime = 0;
+                state.hasSentFailureAlert = false;
+                state.lastSuccessTime = now;
+                return;
             }
-            // 重置失败状态
-            state.failed = false;
-            state.failureStartTime = 0;
-            state.consecutiveFailures = 0;
-            state.isSuppressed = false;
-            state.suppressionStartTime = 0;
-            state.lastAlertTime = 0;
         }
         
-        // 更新节点成功时间
+        // 更新节点成功时间（只有在没有发送恢复通知时才执行）
         state.lastSuccessTime = Date.now();
 
         // 检查节点的区块高度差异
-        if (diff > blockDiffThreshold) {
+        // 只有当全节点高度 > 本地节点高度时才告警（本地节点落后）
+        if (latestBlockNumber > localBlockNumber && diff > blockDiffThreshold) {
             this.logger.warn(`节点${solidNodeUrl} 区块高度差异过大: ${diff} (阈值: ${blockDiffThreshold})`);
             await this.handleBlockDiffAlert(
                 `节点${solidNodeUrl}`,
@@ -252,14 +316,9 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                 blockDiffThreshold,
                 alertChatId,
                 now,
-                state.isSuppressed,
-                state.suppressionStartTime,
+                state,
                 PERSISTENT_ALERT_INTERVAL,
-                SUPPRESSION_THRESHOLD,
-                (suppressed, startTime) => {
-                    state.isSuppressed = suppressed;
-                    state.suppressionStartTime = startTime;
-                }
+                SUPPRESSION_THRESHOLD
             );
         }
     }
@@ -277,6 +336,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             isSuppressed: boolean;
             suppressionStartTime: number;
             lastAlertTime: number;
+            hasSentFailureAlert: boolean;  // 标记是否发送过失败告警
         },
         now: number,
         timeSinceLastSuccess: number,
@@ -290,8 +350,29 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
         if (!state.isSuppressed) {
             // 如果还没有进入抑制状态，检查是否已经持续告警超过30分钟
             if (state.suppressionStartTime === 0) {
-                // 记录首次超阈值时间
+                // 首次检测到失败，记录开始时间
                 state.suppressionStartTime = now;
+                this.logger.log(`节点${solidNodeUrl}首次检测到失败，开始监控`);
+                
+                // 检查失败时长是否已经达到60秒，如果是则立即发送告警
+                const failureDuration = Math.floor(timeSinceLastSuccess / 1000);
+                if (failureDuration >= FAILURE_THRESHOLD / 1000) {
+                    const fullNodeBlockInfo = fullNodeResult !== null ? `${fullNodeResult}` : '未知';
+                    
+                    const message = `🚨 节点${solidNodeUrl}连接失败告警\n\n` +
+                        `节点地址: ${solidNodeUrl}\n` +
+                        `失败时长: ${failureDuration} 秒\n` +
+                        `连续失败次数: ${state.consecutiveFailures}\n` +
+                        `最后成功时间: ${new Date(state.lastSuccessTime).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
+                        `当前时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
+                        `全节点区块号: ${fullNodeBlockInfo}\n\n` +
+                        `请检查节点连接是否正常！`;
+
+                    await this.sendMessageToUser(alertChatId, message);
+                    state.lastAlertTime = now;
+                    state.hasSentFailureAlert = true;  // 标记已发送过失败告警
+                    this.logger.error(`已发送节点${solidNodeUrl}首次失败告警，失败时长: ${failureDuration}秒`);
+                }
             } else if (now - state.suppressionStartTime >= SUPPRESSION_THRESHOLD) {
                 // 持续超阈值超过30分钟，进入告警抑制状态
                 state.isSuppressed = true;
@@ -325,6 +406,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
 
                     await this.sendMessageToUser(alertChatId, message);
                     state.lastAlertTime = now;
+                    state.hasSentFailureAlert = true;  // 标记已发送过失败告警
                     this.logger.error(`已发送节点${solidNodeUrl}持续失败告警，失败时长: ${failureDuration}秒`);
                 }
             }
@@ -358,26 +440,46 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
         threshold: number,
         alertChatId: string,
         now: number,
-        isSuppressed: boolean,
-        suppressionStartTime: number,
+        state: {
+            isSuppressed: boolean;
+            suppressionStartTime: number;
+            lastAlertTime: number;
+        },
         persistentAlertInterval: number,
-        suppressionThreshold: number,
-        updateState: (suppressed: boolean, startTime: number) => void
+        suppressionThreshold: number
     ): Promise<void> {
         // 每次检测到区块高度差异超过阈值时打印日志
         this.logger.warn(`${nodeName} 区块高度差异超过阈值 - 全节点: ${latestBlockNumber}, 本地节点: ${localBlockNumber}, 差异: ${diff}, 阈值: ${threshold}`);
         
         // 检查是否需要进入告警抑制状态
-        if (!isSuppressed) {
+        if (!state.isSuppressed) {
+            // 安全检查：如果 suppressionStartTime 是很久以前的时间（超过1小时），重置它
+            const ONE_HOUR = 60 * 60 * 1000;
+            if (state.suppressionStartTime > 0 && (now - state.suppressionStartTime) > ONE_HOUR) {
+                this.logger.warn(`${nodeName} 检测到异常的抑制开始时间，重置状态`);
+                state.suppressionStartTime = 0;
+                state.lastAlertTime = 0;
+            }
+                    
             // 如果还没有进入抑制状态，检查是否已经持续告警超过30分钟
-            if (suppressionStartTime === 0) {
-                // 记录首次超阈值时间
-                updateState(false, now);
-            } else if (now - suppressionStartTime >= suppressionThreshold) { // 30分钟
+            if (state.suppressionStartTime === 0) {
+                // 首次检测到超阈值，记录开始时间并立即发送告警
+                state.suppressionStartTime = now;
+                const message = `⚠️ ${nodeName} 区块高度异常告警\n\n` +
+                    `节点地址: ${nodeUrl}\n` +
+                    `最新区块: ${latestBlockNumber}\n` +
+                    `本地节点: ${localBlockNumber}\n` +
+                    `差值: ${diff} \n` +
+                    `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
+        
+                await this.sendMessageToUser(alertChatId, message);
+                state.lastAlertTime = now;
+                this.logger.warn(`${nodeName} 区块高度差异过大: ${diff}, 已发送首次告警`);
+            } else if (now - state.suppressionStartTime >= suppressionThreshold) { // 30分钟
                 // 持续超阈值超过30分钟，进入告警抑制状态
-                updateState(true, suppressionStartTime);
+                state.isSuppressed = true;
                 this.logger.warn(`${nodeName} 区块高度差异持续超过阈值30分钟，进入告警抑制状态`);
-
+        
                 // 发送告警抑制通知
                 const suppressionMessage = `⚠️ ${nodeName} 区块高度差异持续超过阈值超过30分钟，暂时停止发送告警\n\n` +
                     `节点地址: ${nodeUrl}\n` +
@@ -386,20 +488,20 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                     `差值: ${diff} (阈值: ${threshold})\n` +
                     `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
                     `系统将在区块高度恢复正常后重新发送通知。`;
-
+        
                 await this.sendMessageToUser(alertChatId, suppressionMessage);
             } else {
                 // 在30分钟内，正常发送告警（受冷却时间控制）
-                if (now - this.lastAlertTime >= this.ALERT_COOLDOWN) {
+                if (now - state.lastAlertTime >= persistentAlertInterval) {
                     const message = `⚠️ ${nodeName} 区块高度异常告警\n\n` +
                         `节点地址: ${nodeUrl}\n` +
                         `最新区块: ${latestBlockNumber}\n` +
                         `本地节点: ${localBlockNumber}\n` +
                         `差值: ${diff} \n` +
                         `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
-
+        
                     await this.sendMessageToUser(alertChatId, message);
-                    this.lastAlertTime = now;
+                    state.lastAlertTime = now;
                     this.logger.warn(`${nodeName} 区块高度差异过大: ${diff}, 已发送告警`);
                 }
             }
