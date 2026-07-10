@@ -139,7 +139,8 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             consecutiveFailures: 0,
             lastSuccessTime: Date.now(),
             isSuppressed: false,
-            suppressionStartTime: 0,
+            suppressionStartTime: 0,  // 用于区块高度差异告警
+            failureSuppressionStartTime: 0,  // 用于连接失败告警
             lastAlertTime: 0,
             hasSentFailureAlert: false,  // 标记是否发送过失败告警
         }));
@@ -190,7 +191,8 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             consecutiveFailures: number;
             lastSuccessTime: number;
             isSuppressed: boolean;
-            suppressionStartTime: number;
+            suppressionStartTime: number;  // 用于区块高度差异告警
+            failureSuppressionStartTime: number;  // 用于连接失败告警
             lastAlertTime: number;
             hasSentFailureAlert: boolean;  // 标记是否发送过失败告警
         },
@@ -257,7 +259,11 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
         // 检查节点是否从失败中恢复
         if (state.failed) {
             const failureDuration = Math.floor((now - state.failureStartTime) / 1000);
-            this.logger.log(`节点${solidNodeUrl}检测到恢复 - failureStartTime: ${new Date(state.failureStartTime).toLocaleString()}, failureDuration: ${failureDuration}秒`);
+            
+            // 只在故障时长是3的倍数或小于10秒时打印日志，减少日志量
+            if (failureDuration % 3 === 0 || failureDuration < 10) {
+                this.logger.log(`节点${solidNodeUrl}检测到恢复 - failureStartTime: ${new Date(state.failureStartTime).toLocaleString()}, failureDuration: ${failureDuration}秒`);
+            }
             
             // 只在故障时长 >= 60秒 且 发送过失败告警时才发送恢复通知
             if (failureDuration >= 60 && state.hasSentFailureAlert) {
@@ -278,6 +284,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                 state.consecutiveFailures = 0;
                 state.isSuppressed = false;
                 state.suppressionStartTime = 0;
+                state.failureSuppressionStartTime = 0;  // 重置连接失败告警的抑制时间
                 state.lastAlertTime = 0;
                 state.hasSentFailureAlert = false;
                 
@@ -293,10 +300,23 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                 state.consecutiveFailures = 0;
                 state.isSuppressed = false;
                 state.suppressionStartTime = 0;
+                state.failureSuppressionStartTime = 0;  // 重置连接失败告警的抑制时间
                 state.lastAlertTime = 0;
                 state.hasSentFailureAlert = false;
                 state.lastSuccessTime = now;
                 return;
+            } else {
+                // 故障时长 < 60秒，不发送恢复通知，但需要重置状态避免日志刷屏
+                this.logger.log(`节点${solidNodeUrl}短暂恢复（${failureDuration}秒 < 60秒），重置失败状态`);
+                state.failed = false;
+                state.failureStartTime = 0;
+                state.consecutiveFailures = 0;
+                state.isSuppressed = false;
+                state.suppressionStartTime = 0;
+                state.failureSuppressionStartTime = 0;  // 重置连接失败告警的抑制时间
+                state.lastAlertTime = 0;
+                state.hasSentFailureAlert = false;
+                // 注意：这里不 return，让代码继续执行到第304行更新 lastSuccessTime
             }
         }
         
@@ -334,7 +354,8 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
             consecutiveFailures: number;
             lastSuccessTime: number;
             isSuppressed: boolean;
-            suppressionStartTime: number;
+            suppressionStartTime: number;  // 用于区块高度差异告警
+            failureSuppressionStartTime: number;  // 用于连接失败告警
             lastAlertTime: number;
             hasSentFailureAlert: boolean;  // 标记是否发送过失败告警
         },
@@ -349,9 +370,9 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
         // 检查是否需要进入告警抑制状态
         if (!state.isSuppressed) {
             // 如果还没有进入抑制状态，检查是否已经持续告警超过30分钟
-            if (state.suppressionStartTime === 0) {
+            if (state.failureSuppressionStartTime === 0) {
                 // 首次检测到失败，记录开始时间
-                state.suppressionStartTime = now;
+                state.failureSuppressionStartTime = now;
                 this.logger.log(`节点${solidNodeUrl}首次检测到失败，开始监控`);
                 
                 // 检查失败时长是否已经达到60秒，如果是则立即发送告警
@@ -373,15 +394,18 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
                     state.hasSentFailureAlert = true;  // 标记已发送过失败告警
                     this.logger.error(`已发送节点${solidNodeUrl}首次失败告警，失败时长: ${failureDuration}秒`);
                 }
-            } else if (now - state.suppressionStartTime >= SUPPRESSION_THRESHOLD) {
+            } else if (now - state.failureSuppressionStartTime >= SUPPRESSION_THRESHOLD) {
                 // 持续超阈值超过30分钟，进入告警抑制状态
                 state.isSuppressed = true;
                 this.logger.warn(`节点${solidNodeUrl} 连接持续失败超过30分钟，进入告警抑制状态`);
+                
+                // 计算从 failureSuppressionStartTime 到现在的时长
+                const totalFailureDuration = Math.floor((now - state.failureSuppressionStartTime) / 1000);
 
                 // 发送告警抑制通知
                 const suppressionMessage = `⚠️ 节点${solidNodeUrl} 连接持续失败超过30分钟，暂时停止发送告警\n\n` +
                     `节点地址: ${solidNodeUrl}\n` +
-                    `失败时长: ${Math.floor(timeSinceLastSuccess / 1000)} 秒\n` +
+                    `总失败时长: ${totalFailureDuration} 秒 (${Math.floor(totalFailureDuration / 60)} 分钟)\n` +
                     `连续失败次数: ${state.consecutiveFailures}\n` +
                     `时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
                     `系统将在连接恢复正常后重新发送通知。`;
